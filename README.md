@@ -12,4 +12,4 @@ An Alert is also generated.
 
 # How to install management pack
 
-Download this file [ManagementPack](./ManagementPack/Scom.LogAnalytics.Workspaces.zip)
+Download this file [ManagementPack](https://github.com/emrgcl/MonitorLogAnalyticsWorkspaces/managementpack/Scom.LogAnalytics.Workspaces.zip)
