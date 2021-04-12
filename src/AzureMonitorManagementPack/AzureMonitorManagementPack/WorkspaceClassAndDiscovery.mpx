@@ -1,0 +1,159 @@
+﻿<ManagementPackFragment SchemaVersion="2.0" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        
+        <!-- In this section, modify the attributes based on your needs. Ensure the
+             Base attribute matches the application you are modeling.
+             More information can be found in the Management Pack Development Kit: 
+             http://msdn.microsoft.com/en-us/library/ee533867.aspx -->
+        <ClassType ID="Scom.LogAnalytics.Workspaces.Class.Workspace" Base="Windows!Microsoft.Windows.ApplicationComponent" Accessibility="Public" Abstract="false" Hosted="true" Singleton="false">
+          <Property ID="WorkspaceId" Key="true" Type="string" />
+          <Property ID="AgentId" Key="false" Type="string" />
+          <Property ID="AzureCloudType" Key="false" Type="string" />
+        </ClassType>
+      
+      </ClassTypes>
+      <RelationshipTypes>
+        <RelationshipType ID="Scom.LogAnalytics.Workspaces.AgentHostsWorkspace" Accessibility="Public" Abstract="false" Base="System!System.Hosting">
+          <Source ID="Source" Type="SC!Microsoft.SystemCenter.Agent" />
+          <Target ID="Target" Type="Scom.LogAnalytics.Workspaces.Class.Workspace" />
+        </RelationshipType>
+      </RelationshipTypes>
+    </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Scom.LogAnalytics.Workspaces.DataSource.WorkspaceDiscovery" Accessibility="Public" Batching="false">
+        <Configuration>
+          <xsd:element name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="SyncTime" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="SyncTime" Selector="$Config/SyncTime$" ParameterType="string" />
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS" TypeID="Windows!Microsoft.Windows.TimedPowerShell.DiscoveryProvider">
+                <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+                <SyncTime>$Config/SyncTime$</SyncTime>
+                <ScriptName>ScomLogAnalyticsWorkspacesDiscovery.ps1</ScriptName>
+                <ScriptBody>
+                    <![CDATA[
+                  Param(
+                    $SourceId,
+                    $ManagedEntityId,
+                    $ComputerName
+                  )
+                  
+                  $StartTime = Get-Date
+                  $ScriptName = 'ScomLogAnalyticsWorkspacesDiscovery.ps1'
+                  $EventID = '1216'
+                  
+                  try{
+
+                    $Agent = New-Object -ComObject AgentConfigManager.MgmtSvcCfg -ErrorAction Stop
+                    $momapi = New-Object -comObject MOM.ScriptAPI -ErrorAction Stop
+                    $momapi.LogScriptEvent($ScriptName,$EventID,0,"`nLoaded com objects successfully. `nRunning as ($whoami).")
+
+                  }
+
+                  catch{
+
+                  $momapi.LogScriptEvent($ScriptName,$EventID,1,"`n FATAL ERROR: Unable to load OperationsManager module. `n Terminating script. `n Error is: $($_.Exception.Message).")
+
+                  }
+
+                  $DiscoveryData = $momapi.CreateDiscoveryData(0,$SourceId,$ManagedEntityId)
+                  $WorkspaceNumber=0  
+                  Foreach ($Workspace in $Agent.GetCloudWorkspaces()) {
+                    ++$WorkspaceNumber
+                    $WorkspaceDisplayName = "WS$WorkspaceNumber"
+                    $instance = $DiscoveryData.CreateClassInstance("$MPElement[Name='Scom.LogAnalytics.Workspaces.Class.Workspace']$")
+                    $instance.AddProperty("$MPElement[Name='Windows!Microsoft.Windows.Computer']/PrincipalName$", $ComputerName)
+                    $instance.AddProperty("$MPElement[Name='System!System.Entity']/DisplayName$", $WorkspaceDisplayName)
+                    $instance.AddProperty("$MPElement[Name='Scom.LogAnalytics.Workspaces.Class.Workspace']/WorkspaceId$", $Workspace.workspaceId)
+                    $instance.AddProperty("$MPElement[Name='Scom.LogAnalytics.Workspaces.Class.Workspace']/AgentId$",$Workspace.AgentId)
+                    $instance.AddProperty("$MPElement[Name='Scom.LogAnalytics.Workspaces.Class.Workspace']/AzureCloudType$", $Workspace.AzureCloudType)
+                    $DiscoveryData.AddInstance($instance)
+                  
+                  }
+                  $DiscoveryData
+                ]]></ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>SourceId</Name>
+                    <Value>$MPElement$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>ManagedEntityId</Name>
+                    <Value>$Target/Id$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>ComputerName</Name>
+                    <Value>$Target/Host/Property[Type="Windows!Microsoft.Windows.Computer"]/PrincipalName$</Value>
+                  </Parameter>
+                </Parameters>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </DataSource>
+            </MemberModules>
+            <Composition>
+              <Node ID="DS" />
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.Discovery.Data</OutputType>
+      </DataSourceModuleType>
+    </ModuleTypes>
+  </TypeDefinitions>
+    <Monitoring>
+    <Discoveries>
+      <Discovery ID="Scom.LogAnalytics.Workspaces.Discovery.Workspace" Target="SC!Microsoft.SystemCenter.Agent" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+      <!-- We choose Microsoft.Windows.Server.OperatingSystem as the preferred target class to ensure this will run on all Windows Servers, but will not create duplicates on clusters -->
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+	      <DiscoveryClass TypeID="Scom.LogAnalytics.Workspaces.Class.Workspace">
+          </DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="Scom.LogAnalytics.Workspaces.DataSource.WorkspaceDiscovery">
+          <IntervalSeconds>86333</IntervalSeconds>
+          <SyncTime></SyncTime>
+          <TimeoutSeconds>120</TimeoutSeconds>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+  </Monitoring>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="true">
+      <DisplayStrings>
+        
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.Class.Workspace">
+          <Name>Log Analytics Workspace</Name>
+          <Description>Workspace Instances hosted by Log Analytics (SCOM) Agent</Description>
+        </DisplayString>
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.Class.Workspace" SubElementID="WorkspaceId">
+          <Name>WorkspaceId</Name>
+          <Description>WorkspaceId</Description>
+        </DisplayString>
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.Class.Workspace" SubElementID="AgentId">
+          <Name>AgentId</Name>
+          <Description>AgentId that connects to the workspace</Description>
+        </DisplayString>  
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.Class.Workspace" SubElementID="AzureCloudType">
+            <Name>AzureCloudType</Name>
+            <Description>AzureCloudType of the workspace</Description>
+        </DisplayString>
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.DataSource.WorkspaceDiscovery">
+          <Name>Workspace Powershell DataSource</Name>
+          <Description>Workspace Powershell DataSource</Description>
+        </DisplayString>
+        <DisplayString ElementID="Scom.LogAnalytics.Workspaces.Discovery.Workspace">
+          <Name>Workspace Discovery</Name>
+          <Description>Discovery for Worksapce Instances</Description>
+        </DisplayString>           
+      </DisplayStrings>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPackFragment>
